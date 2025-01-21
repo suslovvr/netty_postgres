@@ -1,0 +1,50 @@
+spring:
+  application:
+    name: spring_netty
+  main:
+    banner-mode: off
+server:
+  port: 8080
+
+proxy:
+  netty:
+
+    clickhouse:
+      local:
+        port: 9123
+      remote:
+        port: 8123
+        host: localhost
+
+    postgres:
+      local:
+        port: 6432
+      remote:
+        port: 5433
+        host: localhost
+
+semantic:
+  conversions:
+    -
+      schema-conversion: "hw:helloworld"
+      table-conversion: "mft:my_first_table"
+      column-conversions:
+        - "uid:user_id"
+        - "msg:message"
+        - "mtrc:metric"
+        - "tmstmp:timestamp"
+    -
+      schema-conversion: "hw:helloworld"
+      table-conversion: "mft2:my_first_table2"
+      column-conversions:
+        - "uid2:user_id2"
+        - "msg2:message2"
+
+    -
+      schema-conversion: "barrr:base"
+      table-conversion: "tbl_t1:t1"
+      column-conversions:
+        - "uid:user_id"
+        - "msg:message"
+
+

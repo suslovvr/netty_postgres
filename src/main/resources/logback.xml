@@ -1,0 +1,21 @@
+<configuration>
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <logger name="org.springframework.context" level="INFO"/>
+    <logger name="io.netty.handler.logging.LoggingHandler" level="INFO"/>
+
+    <logger name="ru.sber.df.epmp.netty_postgres.server.clickhouse.http.handler.ClickhouseHttpSqlProcessingHandler"
+            level="INFO"/>
+    <logger name="ru.sber.df.epmp.netty_postgres.server.postgres.tcp.codec.PostgresFrontendMessageDecoderJ"
+            level="INFO"/>
+    <logger name="ru.sber.df.epmp.netty_postgres.utils.sql.SqlCommandUtil"
+            level="DEBUG"/>
+
+    <root level="info">
+        <appender-ref ref="STDOUT"/>
+    </root>
+</configuration>
