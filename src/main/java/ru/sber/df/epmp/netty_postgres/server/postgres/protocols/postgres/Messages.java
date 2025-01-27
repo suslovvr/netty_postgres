@@ -128,7 +128,7 @@ public class Messages {
      * block; or 'E' if in a failed transaction block (queries will be
      * rejected until block is ended).
      */
-    static ChannelFuture sendReadyForQuery(Channel channel, TransactionState transactionState) {
+    public static ChannelFuture sendReadyForQuery(Channel channel, TransactionState transactionState) {
         ByteBuf buffer = channel.alloc().buffer(6);
         buffer.writeByte('Z');
         buffer.writeInt(5);
@@ -159,7 +159,7 @@ public class Messages {
      * - integer_datetimes,
      * - standard_conforming_string
      */
-    static void sendParameterStatus(Channel channel, final String name, final String value) {
+    public static void sendParameterStatus(Channel channel, final String name, final String value) {
         byte[] nameBytes = name.getBytes(StandardCharsets.UTF_8);
         byte[] valueBytes = value.getBytes(StandardCharsets.UTF_8);
 
@@ -175,7 +175,7 @@ public class Messages {
         }
     }
 
-    static void sendAuthenticationError(Channel channel, String message) {
+    public static void sendAuthenticationError(Channel channel, String message) {
         LOGGER.warn(message);
         byte[] msg = message.getBytes(StandardCharsets.UTF_8);
         byte[] errorCode = PGErrorStatus.INVALID_AUTHORIZATION_SPECIFICATION.code().getBytes(StandardCharsets.UTF_8);
@@ -184,7 +184,7 @@ public class Messages {
                           METHOD_NAME_CLIENT_AUTH, errorCode);
     }
 
-    static ChannelFuture sendErrorResponse(Channel channel, AccessControl accessControl, Throwable throwable) {
+    public static ChannelFuture sendErrorResponse(Channel channel, AccessControl accessControl, Throwable throwable) {
         final var error = PGError.fromThrowable(SQLExceptions.prepareForClientTransmission(accessControl, throwable));
 
         ByteBuf buffer = channel.alloc().buffer();
@@ -382,7 +382,7 @@ public class Messages {
      * @param channel The channel to write the parameter description to.
      * @param parameters A {@link SortedSet} containing the parameters from index 1 upwards.
      */
-    static void sendParameterDescription(Channel channel, DataType[] parameters) {
+    public static void sendParameterDescription(Channel channel, DataType[] parameters) {
         final int messageByteSize = 4 + 2 + parameters.length * 4;
         ByteBuf buffer = channel.alloc().buffer(messageByteSize);
         buffer.writeByte('t');
@@ -414,7 +414,7 @@ public class Messages {
      * <p>
      * See https://www.postgresql.org/docs/current/static/protocol-message-formats.html
      */
-    static void sendRowDescription(Channel channel,
+    public static void sendRowDescription(Channel channel,
                                    Collection<Symbol> columns,
                                    @Nullable FormatCodes.FormatCode[] formatCodes,
                                    @Nullable RelationInfo relation) {
@@ -467,7 +467,7 @@ public class Messages {
      * ParseComplete
      * | '1' | int32 len |
      */
-    static void sendParseComplete(Channel channel) {
+    public static void sendParseComplete(Channel channel) {
         sendShortMsg(channel, '1', "sentParseComplete");
     }
 
@@ -475,7 +475,7 @@ public class Messages {
      * BindComplete
      * | '2' | int32 len |
      */
-    static void sendBindComplete(Channel channel) {
+    public static void sendBindComplete(Channel channel) {
         sendShortMsg(channel, '2', "sentBindComplete");
     }
 
@@ -483,7 +483,7 @@ public class Messages {
      * EmptyQueryResponse
      * | 'I' | int32 len |
      */
-    static void sendEmptyQueryResponse(Channel channel) {
+    public static void sendEmptyQueryResponse(Channel channel) {
         sendShortMsg(channel, 'I', "sentEmptyQueryResponse");
     }
 
@@ -491,7 +491,7 @@ public class Messages {
      * NoData
      * | 'n' | int32 len |
      */
-    static void sendNoData(Channel channel) {
+    public static void sendNoData(Channel channel) {
         sendShortMsg(channel, 'n', "sentNoData");
     }
 
@@ -519,7 +519,7 @@ public class Messages {
      * CloseComplete
      * | '3' | int32 len |
      */
-    static void sendCloseComplete(Channel channel) {
+    public static void sendCloseComplete(Channel channel) {
         sendShortMsg(channel, '3', "sentCloseComplete");
     }
 
@@ -537,7 +537,7 @@ public class Messages {
      *
      * @param channel The channel to write to.
      */
-    static void sendAuthenticationCleartextPassword(Channel channel) {
+    public static void sendAuthenticationCleartextPassword(Channel channel) {
         ByteBuf buffer = channel.alloc().buffer(9);
         buffer.writeByte('R');
         buffer.writeInt(8);
@@ -552,7 +552,7 @@ public class Messages {
      * CancelRequest
      * | 'K' | int32 request code | int32 pid | int32 secret key |
      */
-    static void sendKeyData(Channel channel, int pid, int secretKey) {
+    public static void sendKeyData(Channel channel, int pid, int secretKey) {
         ByteBuf buffer = channel.alloc().buffer(13);
         buffer.writeByte('K');
         buffer.writeInt(12);

@@ -2,6 +2,7 @@ package ru.sber.df.epmp.netty_postgres.server.postgres.tcp;
 
 import ru.sber.df.epmp.netty_postgres.server.postgres.tcp.codec.PostgresFrontendMessageDecoderJ;
 import ru.sber.df.epmp.netty_postgres.server.postgres.tcp.handler.PostgresExceptionHandler;
+import ru.sber.df.epmp.netty_postgres.server.postgres.tcp.handler.PostgresProtocolHandler;
 import ru.sber.df.epmp.netty_postgres.server.postgres.tcp.handler.PostgresTcpProxyFrontendHandler;
 import ru.sber.df.epmp.netty_postgres.utils.sql.semantic.SemanticNamesConversion;
 import io.netty.bootstrap.ServerBootstrap;
@@ -62,7 +63,8 @@ public class PostgresTcpNettyProxyServer {
                                 @Override
                                 protected void initChannel(SocketChannel ch) throws Exception {
 //                                    ch.pipeline().addLast("logger", new LoggingHandler(LogLevel.INFO));
-                                    ch.pipeline().addLast("decoder", new PostgresFrontendMessageDecoderJ(semanticNamesConversion));
+//                                    ch.pipeline().addLast("decoder", new PostgresFrontendMessageDecoderJ(semanticNamesConversion));
+                                    ch.pipeline().addLast("decoder", new PostgresProtocolHandler(semanticNamesConversion));
                                     ch.pipeline().addLast("error_handler", new PostgresExceptionHandler());
                                     ch.pipeline().addLast("forwarder", new PostgresTcpProxyFrontendHandler(remoteHost, remotePort));
                                 }

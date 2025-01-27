@@ -31,7 +31,7 @@ import org.jetbrains.annotations.Nullable;
 
 import java.io.Closeable;
 
-class AuthenticationContext implements Closeable {
+public class AuthenticationContext implements Closeable {
 
     private SecureString password;
     private final String userName;
@@ -50,7 +50,7 @@ class AuthenticationContext implements Closeable {
      * @param userName The name of the user to authenticate.
      * @param logger The logger instance from {@link PostgresWireProtocol}
      */
-    AuthenticationContext(AuthenticationMethod authMethod, ConnectionProperties connProperties, String userName, Logger logger) {
+    public AuthenticationContext(AuthenticationMethod authMethod, ConnectionProperties connProperties, String userName, Logger logger) {
         this.authMethod = authMethod;
         this.connProperties = connProperties;
         this.userName = userName;
@@ -59,7 +59,7 @@ class AuthenticationContext implements Closeable {
     }
 
     @Nullable
-    User authenticate() {
+    public User authenticate() {
         User user = authMethod.authenticate(userName, password, connProperties);
         if (user != null && logger.isTraceEnabled()) {
             logger.trace("Authentication succeeded user \"{}\" and method \"{}\".", user.name(), authMethod.name());
@@ -67,7 +67,7 @@ class AuthenticationContext implements Closeable {
         return user;
     }
 
-    void setSecurePassword(char[] secureString) {
+    public void setSecurePassword(char[] secureString) {
         this.password = new SecureString(secureString);
     }
 

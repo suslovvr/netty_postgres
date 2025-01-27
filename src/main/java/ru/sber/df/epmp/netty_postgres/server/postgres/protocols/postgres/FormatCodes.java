@@ -44,7 +44,7 @@ public class FormatCodes {
      *      int16 formatCode
      * </pre>
      */
-    static FormatCode[] fromBuffer(ByteBuf buffer) {
+    public static FormatCode[] fromBuffer(ByteBuf buffer) {
         short numFormatCodes = buffer.readShort();
         if (numFormatCodes == 0) {
             return EMPTY_FORMAT_CODES;
@@ -65,7 +65,7 @@ public class FormatCodes {
      * 1 = all params uses this format
      * n = one for each param
      */
-    static FormatCode getFormatCode(@Nullable FormatCode[] formatCodes, int idx) {
+    public static FormatCode getFormatCode(@Nullable FormatCode[] formatCodes, int idx) {
         if (formatCodes == null || formatCodes.length == 0) {
             return FormatCode.TEXT;
         }

@@ -92,7 +92,9 @@ public class Sessions {
     private volatile boolean disabled;
     private volatile TimeValue defaultStatementTimeout;
     private volatile int memoryLimit;
-
+//-------------------------
+    private static Sessions instance = null;
+//-------------------------
 
     @Inject
     public Sessions(//NodeContext nodeCtx,
@@ -122,7 +124,14 @@ public class Sessions {
 //            this.memoryLimit = newLimit;
 //        });
     }
-
+//----------------------
+    public synchronized static Sessions getInstance() {
+        if(instance == null){
+            instance = new Sessions(TableStats.getInstance());
+        }
+        return instance;
+    }
+//----------------------
     private Session newSession(CoordinatorSessionSettings sessionSettings) {
         /*
         if (disabled) {

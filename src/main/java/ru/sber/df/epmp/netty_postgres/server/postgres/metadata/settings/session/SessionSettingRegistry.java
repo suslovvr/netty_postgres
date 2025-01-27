@@ -36,6 +36,8 @@ import org.elasticsearch.common.inject.Singleton;
  */
 import org.joda.time.Period;
 import org.joda.time.PeriodType;
+import ru.sber.df.epmp.netty_postgres.server.postgres.user.UserLookupService;
+import ru.sber.df.epmp.netty_postgres.server.postgres.user.UserManagerService;
 
 import java.util.ArrayList;
 import java.util.Locale;
@@ -104,6 +106,16 @@ public class SessionSettingRegistry {
         "The maximum duration of any statement before it gets killed. Infinite/disabled if 0",
         DataTypes.INTERVAL
     );
+    //-----------------------------
+    private static SessionSettingRegistry instance=null;
+    public synchronized static SessionSettingRegistry getInstance() {
+        if(instance == null){
+            instance = new SessionSettingRegistry();
+        }
+        return instance;
+    }
+    public SessionSettingRegistry(){}
+    //------------------------------
 /*
     static final SessionSetting<Integer> MEMORY_LIMIT = new SessionSetting<>(
         Sessions.MEMORY_LIMIT.getKey(),

@@ -86,7 +86,7 @@ public class CoordinatorSessionSettings extends SessionSettings {
     }
 
     public static CoordinatorSessionSettings systemDefaults() {
-        return new CoordinatorSessionSettings(User.CRATE_USER);
+        return new CoordinatorSessionSettings(User.SUPER_USER);
     }
 
     public void setErrorOnUnknownObjectKey(boolean newValue) {

@@ -31,10 +31,12 @@ import java.util.Set;
 
 public class User {
 
-    public static final User CRATE_USER = new User("crate", EnumSet.of(Role.SUPERUSER), Set.of(), null);
+    public static final User SUPER_USER = new User("admin", EnumSet.of(Role.SUPERUSER), Set.of(), null);
+    public static final User DEFAULT_USER = new User("default", EnumSet.of(Role.DEFAULT), Set.of(), null);
 
     public enum Role {
-        SUPERUSER
+        SUPERUSER,
+        DEFAULT
     }
 
     private final String name;

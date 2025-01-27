@@ -53,7 +53,7 @@ public record KeyData(int pid, int secretKey) //implements Writeable
         return new KeyData(pid, secretKey);
     }
 
-    static KeyData of(ByteBuf buffer) {
+    public static KeyData of(ByteBuf buffer) {
         return new KeyData(buffer.readInt(), buffer.readInt());
     }
 

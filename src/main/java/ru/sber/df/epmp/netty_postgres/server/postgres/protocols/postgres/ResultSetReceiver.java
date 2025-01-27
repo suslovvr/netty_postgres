@@ -33,7 +33,7 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
 
-class ResultSetReceiver extends BaseResultReceiver {
+public class ResultSetReceiver extends BaseResultReceiver {
 
     private final String query;
     private final DelayableWriteChannel channel;
@@ -48,7 +48,7 @@ class ResultSetReceiver extends BaseResultReceiver {
 
     private long rowCount = 0;
 
-    ResultSetReceiver(String query,
+    public ResultSetReceiver(String query,
                       DelayableWriteChannel channel,
                       DelayedWrites delayedWrites,
                       TransactionState transactionState,

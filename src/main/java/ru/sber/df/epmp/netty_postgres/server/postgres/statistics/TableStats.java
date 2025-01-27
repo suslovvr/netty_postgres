@@ -21,6 +21,7 @@
 
 package ru.sber.df.epmp.netty_postgres.server.postgres.statistics;
 
+import ru.sber.df.epmp.netty_postgres.server.postgres.action.sql.Sessions;
 import ru.sber.df.epmp.netty_postgres.server.postgres.metadata.RelationName;
 //import org.elasticsearch.common.inject.Singleton;
 import ru.sber.df.epmp.netty_postgres.server.postgres.common.inject.Singleton;
@@ -35,7 +36,15 @@ import java.util.Map;
 public class TableStats {
 
     private volatile Map<RelationName, Stats> tableStats = new HashMap<>();
-
+//--------------------------
+    private static TableStats instance = null;
+    public synchronized static TableStats getInstance() {
+        if(instance == null){
+            instance = new TableStats();
+        }
+        return instance;
+    }
+//---------------------------
     public void updateTableStats(Map<RelationName, Stats> tableStats) {
         this.tableStats = tableStats;
     }

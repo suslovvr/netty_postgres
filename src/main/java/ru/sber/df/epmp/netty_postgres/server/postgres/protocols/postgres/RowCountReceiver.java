@@ -21,6 +21,7 @@
 
 package ru.sber.df.epmp.netty_postgres.server.postgres.protocols.postgres;
 
+import io.netty.channel.Channel;
 import ru.sber.df.epmp.netty_postgres.server.postgres.action.sql.BaseResultReceiver;
 import ru.sber.df.epmp.netty_postgres.server.postgres.auth.AccessControl;
 import ru.sber.df.epmp.netty_postgres.server.postgres.data.Row;
@@ -28,16 +29,16 @@ import ru.sber.df.epmp.netty_postgres.server.postgres.protocols.postgres.Delayab
 import io.netty.channel.ChannelFuture;
 import org.jetbrains.annotations.NotNull;
 
-class RowCountReceiver extends BaseResultReceiver {
+public class RowCountReceiver extends BaseResultReceiver {
 
-    private final DelayableWriteChannel channel;
+    private final Channel channel;
     private final String query;
     private final AccessControl accessControl;
     private final DelayedWrites delayedWrites;
     private long rowCount;
 
-    RowCountReceiver(String query,
-                     DelayableWriteChannel channel,
+    public RowCountReceiver(String query,
+                     Channel channel,
                      DelayedWrites delayedWrites,
                      AccessControl accessControl) {
         this.query = query;
@@ -60,16 +61,18 @@ class RowCountReceiver extends BaseResultReceiver {
 
     @Override
     public void allFinished() {
-        ChannelFuture sendCommandComplete = Messages.sendCommandComplete(channel.bypassDelay(), query, rowCount);
-        channel.writePendingMessages(delayedWrites);
+        ChannelFuture sendCommandComplete = Messages.sendCommandComplete(channel//.bypassDelay()
+                , query, rowCount);
+//        channel.writePendingMessages(delayedWrites);
         channel.flush();
         sendCommandComplete.addListener(f -> super.allFinished());
     }
 
     @Override
     public void fail(@NotNull Throwable throwable) {
-        ChannelFuture sendErrorResponse = Messages.sendErrorResponse(channel.bypassDelay(), accessControl, throwable);
-        channel.writePendingMessages(delayedWrites);
+        ChannelFuture sendErrorResponse = Messages.sendErrorResponse(channel//.bypassDelay()
+                , accessControl, throwable);
+//        channel.writePendingMessages(delayedWrites);
         channel.flush();
         sendErrorResponse.addListener(f -> super.fail(throwable));
     }

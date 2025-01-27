@@ -83,7 +83,9 @@ public class Schemas //extends AbstractLifecycleComponent
      * {@see SessionContext}
      */
     public static final String DOC_SCHEMA_NAME = "doc";
-
+//--------------------------------
+    public static final String DEFAULT_SCHEMA = "public";
+//--------------------------------
 //    private final ClusterService clusterService;
 //    private final DocSchemaInfoFactory docSchemaInfoFactory;
     private final Map<String, SchemaInfo> schemas = new ConcurrentHashMap<>();
