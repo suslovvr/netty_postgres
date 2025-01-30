@@ -28,7 +28,7 @@ public class PostgresFrontendMessageDecoderJ extends ChannelInboundHandlerAdapte
 
     @Override
     public void channelRead(final ChannelHandlerContext ctx, final Object msg) throws Exception {
-        logger.debug("PostgresFrontendMessageDecoderJ decode");
+        logger.info("PostgresFrontendMessageDecoderJ decode");
         if (!(msg instanceof ByteBuf buf)) {
             ctx.fireChannelRead(msg);
             return;

@@ -1,10 +1,12 @@
 package ru.sber.df.epmp.netty_postgres.server.postgres.tcp.handler;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.channel.SimpleChannelInboundHandler;
+import io.netty.handler.ssl.SslContext;
 import joptsimple.OptionParser;
 import joptsimple.OptionSet;
 import org.apache.logging.log4j.LogManager;
@@ -31,6 +33,7 @@ import ru.sber.df.epmp.netty_postgres.server.postgres.sql.tree.Statement;
 import ru.sber.df.epmp.netty_postgres.server.postgres.tcp.codec.PostgresWireMessageBuilder;
 import ru.sber.df.epmp.netty_postgres.server.postgres.tcp.domain.FrontendBootstrapMessage;
 import ru.sber.df.epmp.netty_postgres.server.postgres.tcp.domain.FrontendMessageTypeJ;
+import ru.sber.df.epmp.netty_postgres.server.postgres.tcp.domain.PgCommandMessage;
 import ru.sber.df.epmp.netty_postgres.server.postgres.tcp.utils.ByteBufUtilsJ;
 import ru.sber.df.epmp.netty_postgres.server.postgres.types.DataType;
 import ru.sber.df.epmp.netty_postgres.server.postgres.user.User;
@@ -50,10 +53,11 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
+import java.util.function.Supplier;
 
 import static ru.sber.df.epmp.netty_postgres.server.postgres.protocols.SSL.getSession;
 import static ru.sber.df.epmp.netty_postgres.server.postgres.protocols.postgres.FormatCodes.getFormatCode;
-import static ru.sber.df.epmp.netty_postgres.server.postgres.protocols.postgres.Messages.sendReadyForQuery;
+//import static ru.sber.df.epmp.netty_postgres.server.postgres.protocols.postgres.Messages.sendReadyForQuery;
 
 public class PostgresProtocolHandler extends ChannelInboundHandlerAdapter {
     private static final Logger LOGGER = LogManager.getLogger(PostgresProtocolHandler.class);
@@ -73,25 +77,29 @@ public class PostgresProtocolHandler extends ChannelInboundHandlerAdapter {
     private Authentication authService;
     private AuthenticationContext authContext;
     private SessionSettingRegistry sessionSettingRegistry;
-    final MessageHandler handler;
-    private DelayableWriteChannel channel;
-
+//    final MessageHandler handler;
+//    private DelayableWriteChannel channel;
+    private List<PgCommandMessage> msgChunks= new LinkedList<>();
     //-----------------------------------
     public PostgresProtocolHandler(SemanticNamesConversion semanticNamesConversion) {
         this.semanticNamesConversion = semanticNamesConversion;
-        this.decoder = new PgDecoder(null);
+        Supplier<SslContext> getSslContext = () -> null;
+
+        this.decoder = new PgDecoder( getSslContext);
         this.sessions = Sessions.getInstance();
         this.session = sessions.newSession(Schemas.DEFAULT_SCHEMA, User.DEFAULT_USER);
         this.getAccessControl = UserManagerService.getInstance()::getAccessControl;
         this.authService = AlwaysOKAuthentication.getInstance();
         this.sessionSettingRegistry = SessionSettingRegistry.getInstance();
-        this.handler = new MessageHandler();
+//        this.handler = new MessageHandler();
     }
 
     @Override
     public void channelRead(final ChannelHandlerContext ctx, final Object msg) throws Exception {
-        ByteBuf buffer = (ByteBuf)msg;
-        DelayableWriteChannel channel= new DelayableWriteChannel(ctx.channel());
+        ByteBuf bufMsg = (ByteBuf)msg;
+        ByteBuf buffer = bufMsg.copy();
+//        DelayableWriteChannel channel= new DelayableWriteChannel(ctx.channel());
+        Channel channel= ctx.channel();
         assert channel != null : "Channel must be initialized";
         try {
             dispatchState(buffer, channel);
@@ -101,18 +109,27 @@ public class PostgresProtocolHandler extends ChannelInboundHandlerAdapter {
                 AccessControl accessControl = session == null
                         ? AccessControl.DISABLED
                         : getAccessControl.apply(session.sessionSettings());
-                Messages.sendErrorResponse(channel, accessControl, t);
+//                Messages.sendErrorResponse(channel, accessControl, t);
+                LOGGER.error("Error trying to send error to client: {}", t);
             } catch (Throwable ti) {
                 LOGGER.error("Error trying to send error to client: {}", t, ti);
             }
         }
-        ctx.fireChannelRead(msg);
+        LOGGER.info("OutcomeList().size() = "+decoder.getOutcomeList().size());
+        LOGGER.info("CurrentBuf().readableBytes() = "+decoder.getCurrentBuf().readableBytes());
+        if(decoder.getCurrentBuf().readableBytes()==0) {
+            ctx.fireChannelRead(msg);
+        }
     }
 
 
-    private void dispatchState(ByteBuf buffer, DelayableWriteChannel channel) {
+    private void dispatchState(ByteBuf buffer, Channel channel) {
         switch (decoder.state()) {
+            case STARTUP:
+                LOGGER.info("SSLRequest");
+                return;
             case STARTUP_PARAMETERS:
+                pushStartUpChunk(  decoder.payloadLength(),decoder.getRequestCode() , buffer);
                 handleStartupBody(buffer, channel);
                 decoder.startupDone();
                 return;
@@ -122,8 +139,8 @@ public class PostgresProtocolHandler extends ChannelInboundHandlerAdapter {
                 return;
 
             case MSG:
-                LOGGER.trace("msg={} msgLength={} readableBytes={}", ((char) decoder.msgType()), decoder.payloadLength(), buffer.readableBytes());
-
+                LOGGER.info("msg={} msgLength={} readableBytes={}", ((char) decoder.msgType()), decoder.payloadLength(), buffer.readableBytes());
+                pushMsgChunk(decoder.msgType(), decoder.payloadLength(), buffer);
                 if (ignoreTillSync && decoder.msgType() != 'S') {
                     buffer.skipBytes(decoder.payloadLength());
                     return;
@@ -135,7 +152,7 @@ public class PostgresProtocolHandler extends ChannelInboundHandlerAdapter {
         }
     }
 
-    private void dispatchMessage(ByteBuf buffer, DelayableWriteChannel channel) {
+    private void dispatchMessage(ByteBuf buffer, Channel channel) {
         switch (decoder.msgType()) {
             case 'Q': // Query (simple)
                 handleSimpleQuery(buffer, channel);
@@ -188,7 +205,7 @@ public class PostgresProtocolHandler extends ChannelInboundHandlerAdapter {
      * foreach param:
      * | int32 type_oid (zero = unspecified)
      */
-    private void handleParseMessage(ByteBuf buffer, final DelayableWriteChannel channel) {
+    private void handleParseMessage(ByteBuf buffer, final Channel channel) {
         String statementName = readCString(buffer);
         final String query = readCString(buffer);
         short numParams = buffer.readShort();
@@ -202,8 +219,9 @@ public class PostgresProtocolHandler extends ChannelInboundHandlerAdapter {
             }
             paramTypes.add(dataType);
         }
-        session.parse(statementName, query, paramTypes);
-        Messages.sendParseComplete(channel);
+        LOGGER.info("method=handleParseMessage stmtName={} query={} paramTypes={}", statementName, query, paramTypes);
+//        session.parse(statementName, query, paramTypes);
+//        Messages.sendParseComplete(channel);
     }
 
     private void handlePassword(ByteBuf buffer, final Channel channel) {
@@ -224,6 +242,7 @@ public class PostgresProtocolHandler extends ChannelInboundHandlerAdapter {
             if (options != null) {
                 applyOptions(options);
             }
+            /*
             Messages.sendAuthenticationOK(channel)
                     .addListener(f -> sendParams(channel, session.sessionSettings()))
                     .addListener(f -> Messages.sendKeyData(channel, session.id(), session.secret()))
@@ -233,8 +252,11 @@ public class PostgresProtocolHandler extends ChannelInboundHandlerAdapter {
                             switchToTransportProtocol(channel);
                         }
                     });
+
+             */
         } catch (Exception e) {
-            Messages.sendAuthenticationError(channel, e.getMessage());
+            LOGGER.error(e.getMessage());
+//            Messages.sendAuthenticationError(channel, e.getMessage());
         } finally {
             authContext.close();
             authContext = null;
@@ -313,6 +335,8 @@ public class PostgresProtocolHandler extends ChannelInboundHandlerAdapter {
                         break;
 
                     default:
+                        /*
+
                         Messages.sendErrorResponse(
                                 channel,
                                 getAccessControl.apply(session.sessionSettings()),
@@ -323,14 +347,22 @@ public class PostgresProtocolHandler extends ChannelInboundHandlerAdapter {
                                         paramType.getName())
                                 )
                         );
-                        return;
+
+                         */
+                        throw new UnsupportedOperationException(String.format(
+                                Locale.ENGLISH,
+                                "Unsupported format code '%d' for param '%s'",
+                                formatCode.ordinal(),
+                                paramType.getName()));
                 }
             }
         }
-
+/*
         FormatCodes.FormatCode[] resultFormatCodes = FormatCodes.fromBuffer(buffer);
         session.bind(portalName, statementName, params, resultFormatCodes);
         Messages.sendBindComplete(channel);
+
+ */
     }
 
     private <T> List<T> createList(short size) {
@@ -353,13 +385,13 @@ public class PostgresProtocolHandler extends ChannelInboundHandlerAdapter {
         DescribeResult describeResult = session.describe((char) type, portalOrStatement);
         Collection<Symbol> fields = describeResult.getFields();
         if (type == 'S') {
-            Messages.sendParameterDescription(channel, describeResult.getParameters());
+//            Messages.sendParameterDescription(channel, describeResult.getParameters());
         }
         if (fields == null) {
-            Messages.sendNoData(channel);
+//            Messages.sendNoData(channel);
         } else {
             var resultFormatCodes = type == 'P' ? session.getResultFormatCodes(portalOrStatement) : null;
-            Messages.sendRowDescription(channel, fields, resultFormatCodes, describeResult.relation());
+//            Messages.sendRowDescription(channel, fields, resultFormatCodes, describeResult.relation());
         }
     }
 
@@ -372,7 +404,8 @@ public class PostgresProtocolHandler extends ChannelInboundHandlerAdapter {
      * | string portalName
      * | int32 maxRows (0 = unlimited)
      */
-    private void handleExecute(ByteBuf buffer, DelayableWriteChannel channel) {
+    private void handleExecute(ByteBuf buffer, Channel channel) {
+        /*
         String portalName = readCString(buffer);
         int maxRows = buffer.readInt();
         String query = session.getQuery(portalName);
@@ -425,9 +458,12 @@ public class PostgresProtocolHandler extends ChannelInboundHandlerAdapter {
             );
         }
         session.execute(portalName, maxRows, resultReceiver);
+
+         */
     }
 
-    private void handleSync(DelayableWriteChannel channel) {
+    private void handleSync(Channel channel) {
+        /*
         if (ignoreTillSync) {
             ignoreTillSync = false;
             // If an error happens all sub-sequent messages can be ignored until the client sends a sync message
@@ -452,31 +488,37 @@ public class PostgresProtocolHandler extends ChannelInboundHandlerAdapter {
             Messages.sendErrorResponse(channel, getAccessControl.apply(session.sessionSettings()), t);
             sendReadyForQuery(channel, TransactionState.FAILED_TRANSACTION);
         }
+
+         */
     }
 
     /**
      * | 'C' | int32 len | byte portalOrStatement | string portalOrStatementName |
      */
-    private void handleClose(ByteBuf buffer, DelayableWriteChannel channel) {
+    private void handleClose(ByteBuf buffer, Channel channel) {
+        /*
         byte b = buffer.readByte();
         String portalOrStatementName = readCString(buffer);
         session.close(b, portalOrStatementName);
         Messages.sendCloseComplete(channel);
+
+         */
     }
 
     @VisibleForTesting
-    void handleSimpleQuery(ByteBuf buffer, final DelayableWriteChannel channel) {
+    void handleSimpleQuery(ByteBuf buffer, final Channel channel) {
         String queryString = readCString(buffer);
         assert queryString != null : "query must not be nulL";
 
         if (queryString.isEmpty() || ";".equals(queryString)) {
-            Messages.sendEmptyQueryResponse(channel);
-            sendReadyForQuery(channel, TransactionState.IDLE);
+//            Messages.sendEmptyQueryResponse(channel);
+//            sendReadyForQuery(channel, TransactionState.IDLE);
             return;
         }
-
-        List<Statement> statements = select1();
+        LOGGER.info("method=handleSimpleQuery query={}", queryString);
         /*
+        List<Statement> statements = select1();
+
         try {
             statements = SqlParser.createStatementsForSimpleQuery(
                     queryString,
@@ -491,17 +533,19 @@ public class PostgresProtocolHandler extends ChannelInboundHandlerAdapter {
             return;
         }
 
-         */
+
         CompletableFuture<?> composedFuture = CompletableFuture.completedFuture(null);
         for (var statement : statements) {
             composedFuture = composedFuture.thenCompose(result -> handleSingleQuery(statement, queryString, channel));
         }
         composedFuture.whenComplete(new ReadyForQueryCallback(channel, TransactionState.IDLE));
+
+         */
     }
 
     private void handleStartupBody(ByteBuf buffer, Channel channel) {
         properties = readStartupMessage(buffer);
-        initAuthentication(channel);
+//        initAuthentication(channel);
     }
 
     private void initAuthentication(Channel channel) {
@@ -518,24 +562,24 @@ public class PostgresProtocolHandler extends ChannelInboundHandlerAdapter {
                     "No valid auth.host_based entry found for host \"%s\", user \"%s\". Did you enable TLS in your client?",
                     address.getHostAddress(), userName
             );
-            Messages.sendAuthenticationError(channel, errorMessage);
+//            Messages.sendAuthenticationError(channel, errorMessage);
         } else {
             authContext = new AuthenticationContext(authMethod, connProperties, userName, LOGGER);
             if (PASSWORD_AUTH_NAME.equals(authMethod.name())) {
-                Messages.sendAuthenticationCleartextPassword(channel);
+//                Messages.sendAuthenticationCleartextPassword(channel);
                 return;
             }
             finishAuthentication(channel);
         }
     }
 
-    private CompletableFuture<?> handleSingleQuery(Statement statement, String query, DelayableWriteChannel channel) {
-        CompletableFuture<?> result = new CompletableFuture<>();
+    private void handleSingleQuery(Statement statement, String query, Channel channel) {
 
         AccessControl accessControl = getAccessControl.apply(session.sessionSettings());
         try {
             session.analyze("", statement, Collections.emptyList(), query);
             session.bind("", "", Collections.emptyList(), null);
+            /*
             DescribeResult describeResult = session.describe('P', "");
             List<Symbol> fields = describeResult.getFields();
 
@@ -563,11 +607,11 @@ public class PostgresProtocolHandler extends ChannelInboundHandlerAdapter {
                 session.execute("", 0, resultSetReceiver);
             }
             return session.sync();
+
+             */
         } catch (Throwable t) {
-            channel.discardDelayedWrites();
-            Messages.sendErrorResponse(channel, accessControl, t);
-            result.completeExceptionally(t);
-            return result;
+//            Messages.sendErrorResponse(channel, accessControl, t);
+            LOGGER.error(t);
         }
     }
 
@@ -595,7 +639,7 @@ public class PostgresProtocolHandler extends ChannelInboundHandlerAdapter {
 
         // Cancel request is sent by the client over a new connection.
         // This closes the new connection, not the one running the query.
-        handler.closeSession();
+//        handler.closeSession();
         channel.close();
     }
 
@@ -636,7 +680,8 @@ public class PostgresProtocolHandler extends ChannelInboundHandlerAdapter {
                 channel.flush();
             }
         } catch (Throwable t) {
-            Messages.sendErrorResponse(channel, getAccessControl.apply(session.sessionSettings()), t);
+            LOGGER.error(t);
+//            Messages.sendErrorResponse(channel, getAccessControl.apply(session.sessionSettings()), t);
         }
     }
 
@@ -657,7 +702,8 @@ public class PostgresProtocolHandler extends ChannelInboundHandlerAdapter {
 
         @Override
         public void accept(Object result, Throwable t) {
-            sendReadyForQuery(channel, transactionState);
+//            sendReadyForQuery(channel, transactionState);
+            LOGGER.info("called accept..");
         }
     }
     private void switchToTransportProtocol(Channel channel) {
@@ -669,19 +715,22 @@ public class PostgresProtocolHandler extends ChannelInboundHandlerAdapter {
 //        addTransportHandler.accept(pipeline);
     }
     private void sendParams(Channel channel, CoordinatorSessionSettings sessionSettings) {
-//        Messages.sendParameterStatus(channel, "crate_version", Version.CURRENT.externalNumber());
+/*
+        Messages.sendParameterStatus(channel, "crate_version", Version.CURRENT.externalNumber());
         Messages.sendParameterStatus(channel, "server_version", PG_SERVER_VERSION);
         Messages.sendParameterStatus(channel, "server_encoding", "UTF8");
         Messages.sendParameterStatus(channel, "client_encoding", "UTF8");
         Messages.sendParameterStatus(channel, "datestyle", sessionSettings.dateStyle());
         Messages.sendParameterStatus(channel, "TimeZone", "UTC");
         Messages.sendParameterStatus(channel, "integer_datetimes", "on");
+
+ */
     }
+    /*
     private class MessageHandler extends SimpleChannelInboundHandler<ByteBuf> {
 
         @Override
         public void channelRegistered(ChannelHandlerContext ctx) throws Exception {
-            channel = new DelayableWriteChannel(ctx.channel());
         }
 
         @Override
@@ -732,7 +781,7 @@ public class PostgresProtocolHandler extends ChannelInboundHandlerAdapter {
             }
         }
 
-        private void dispatchMessage(ByteBuf buffer, DelayableWriteChannel channel) {
+        private void dispatchMessage(ByteBuf buffer, Channel channel) {
             switch (decoder.msgType()) {
                 case 'Q': // Query (simple)
                     handleSimpleQuery(buffer, channel);
@@ -800,7 +849,7 @@ public class PostgresProtocolHandler extends ChannelInboundHandlerAdapter {
             super.channelUnregistered(ctx);
         }
     }
-
+*/
 
     //----------------------------------
     private List<Statement> select1(){
@@ -823,5 +872,52 @@ public class PostgresProtocolHandler extends ChannelInboundHandlerAdapter {
         };
         retVal.add(stmt);
         return retVal;
+    }
+
+    public PgDecoder getDecoder() {
+        return decoder;
+    }
+
+    private void pushMsgChunk(byte msgType, int len,ByteBuf buffer){
+        PgCommandMessage msgChunk = new PgCommandMessage( msgType, buffer,  len);
+        msgChunks.add(msgChunk);
+    }
+    private void pushStartUpChunk( int len, int requestCode, ByteBuf buffer){
+        PgCommandMessage msgChunk = new PgCommandMessage(  len, requestCode, buffer);
+        msgChunks.add(msgChunk);
+    }
+
+    public int getMessageLen(){
+        int retVal=0;
+        for(PgCommandMessage chunk: msgChunks){
+            if(chunk.getRequestCode()==0) {
+                retVal += chunk.getLength() + 4;
+            }else{
+                retVal += chunk.getLength() + 8;
+            }
+        }
+        return retVal;
+    }
+
+    public ByteBuf pullMessage(){
+        ByteBuf buf=Unpooled.buffer(getMessageLen());
+        for(PgCommandMessage chunk: msgChunks){
+            if(chunk.getRequestCode()==0) {
+                buf.writeByte(chunk.getMsgType());
+                buf.writeInt(chunk.getLength() + 4);
+                buf.writeBytes(chunk.getBytes());
+            }else{
+                buf.writeInt(chunk.getLength() + 8);
+                buf.writeInt(chunk.getRequestCode());
+                buf.writeBytes(chunk.getBytes());
+            }
+        }
+        LOGGER.info("pullMessage from "+msgChunks.size()+" chanks");
+        msgChunks.clear();
+        return buf;
+    }
+
+    public boolean containMsg(){
+        return msgChunks.size()>0;
     }
 }

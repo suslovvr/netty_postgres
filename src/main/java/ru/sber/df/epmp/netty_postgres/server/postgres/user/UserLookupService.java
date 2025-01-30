@@ -42,7 +42,7 @@ import java.util.Set;
 public class UserLookupService implements UserLookup//, ClusterStateListener
 {
 
-    private volatile Set<User> users = Set.of(User.SUPER_USER);
+    private volatile Set<User> users = Set.of(User.SUPER_USER,User.CRATE_USER);
 
     @Inject
     public UserLookupService(
@@ -86,8 +86,8 @@ public class UserLookupService implements UserLookup//, ClusterStateListener
     static Set<User> getUsers(@Nullable UsersMetadata metadata,
                               @Nullable UsersPrivilegesMetadata privilegesMetadata) {
         HashSet<User> users = new HashSet<>();
-        users.add(User.SUPER_USER //.CRATE_USER
-        );
+        users.add(User.CRATE_USER);
+        users.add(User.SUPER_USER);
         if (metadata != null) {
             for (Map.Entry<String, SecureHash> user: metadata.users().entrySet()) {
                 String userName = user.getKey();

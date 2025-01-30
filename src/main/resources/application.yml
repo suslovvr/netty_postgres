@@ -20,7 +20,7 @@ proxy:
       local:
         port: 7432
       remote:
-        port: 5433
+        port: 5432
         host: localhost
 
 semantic:
