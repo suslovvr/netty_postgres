@@ -29,7 +29,6 @@ import io.netty.handler.codec.ByteToMessageDecoder;
 import io.netty.handler.ssl.SslContext;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import ru.sber.df.epmp.netty_postgres.server.postgres.tcp.handler.PostgresProtocolHandler;
 
 import java.util.List;
 import java.util.function.Supplier;
@@ -38,7 +37,8 @@ public class PgDecoder extends ByteToMessageDecoder {
     private static final Logger LOGGER = LogManager.getLogger(PgDecoder.class);
 
     static final int CANCEL_CODE = 80877102;
-    static final int SSL_REQUEST_CODE = 80877103;
+    public static final int SSL_REQUEST_CODE = 80877103;
+    public static final int STARTUP_ID = 196608; // First Hextet: 3 (version), Second Hextet: 0
 
     static final int MIN_STARTUP_LENGTH = 8;
     static final int MIN_MSG_LENGTH = 5;
@@ -88,30 +88,21 @@ public class PgDecoder extends ByteToMessageDecoder {
     private byte msgType;
     private int payloadLength;
 
+    private boolean sslProxyMode = false;
+
 
     public PgDecoder(Supplier<SslContext> getSslContext) {
         this.getSslContext = getSslContext;
     }
-
-    private ByteBuf incomeBuf=null;
     private ByteBuf currentBuf=null;
-    private List<Object> outcomeList=null;
-    private byte[] bytes;
     private int requestCode;
 
     @Override
     protected void decode(ChannelHandlerContext ctx, ByteBuf in, List<Object> out) throws Exception {
-
-        if(incomeBuf==null) {
-            incomeBuf = in.copy();
-            bytes = new byte[ incomeBuf.readableBytes()];
-            incomeBuf.getBytes(0,bytes);
-
-            LOGGER.info("bytes.length=" + bytes.length);
-        }
         currentBuf=in;
-        if(outcomeList==null){
-            outcomeList=out;
+        LOGGER.info("received for decode "+ getCurrentBuf().readableBytes());
+        if(getCurrentBuf().readableBytes()==496){
+            LOGGER.info(" decode ");
         }
         ByteBuf decodeBuf = decode(ctx, in);
         if (decodeBuf != null) {
@@ -125,34 +116,39 @@ public class PgDecoder extends ByteToMessageDecoder {
                 if (in.readableBytes() < MIN_STARTUP_LENGTH) {
                     return null;
                 }
-
+                ByteBuf bufCopy = in.copy();
 //                in.markReaderIndex();
                 payloadLength = in.readInt() - 8;
                 requestCode = in.readInt();
 
                 if (requestCode == SSL_REQUEST_CODE) {
-                    /*
+//                    sslProxyMode = true;
                     SslContext sslContext = getSslContext.get();
+//                    requestCode=196608;
+
                     Channel channel = ctx.channel();
                     ByteBuf out = ctx.alloc().buffer(1);
                     if (sslContext == null) {
-                        channel.writeAndFlush(out.writeByte('N'));
+//                        channel.writeAndFlush(out.writeByte('N'));
                     } else {
-                        channel.writeAndFlush(out.writeByte('S'));
+//                        channel.writeAndFlush(out.writeByte('S'));
                         ctx.pipeline().addFirst(sslContext.newHandler(ctx.alloc()));
                     }
                     in.markReaderIndex();
 
-                     */
                     ByteBuf buf= Unpooled.buffer(8);
                     buf.writeInt(8).writeInt(requestCode);
                     return buf;//decode(ctx, in);
                 } else {
-                    if (in.readableBytes() < payloadLength) {
-                        in.resetReaderIndex();
-                        return null;
-                    }
                     state = requestCode == CANCEL_CODE ? State.CANCEL : State.STARTUP_PARAMETERS;
+                    if((state==State.STARTUP_PARAMETERS)&&(in.readableBytes() <= payloadLength) ){
+//                        in.resetReaderIndex();
+//                        payloadLength=in.readableBytes()+8;
+//                        return retVal;
+                        ByteBuf buf= Unpooled.buffer(in.readableBytes());
+                        buf.writeBytes(in);
+                        return bufCopy;
+                    }
                     return in.readBytes(payloadLength);
                 }
             }
@@ -171,6 +167,10 @@ public class PgDecoder extends ByteToMessageDecoder {
                 in.markReaderIndex();
                 msgType = in.readByte();
                 payloadLength = in.readInt() - 4; // exclude length itself
+
+                if( sslProxyMode && in.readableBytes() < payloadLength){
+                    return in.readBytes(in.readableBytes());
+                }
 
                 if (in.readableBytes() < payloadLength) {
                     in.resetReaderIndex();
@@ -201,19 +201,15 @@ public class PgDecoder extends ByteToMessageDecoder {
         return state;
     }
 
-    public ByteBuf getIncomeBuf() {
-        return incomeBuf;
-    }
-
-    public List<Object> getOutcomeList() {
-        return outcomeList;
-    }
-
     public ByteBuf getCurrentBuf() {
         return currentBuf;
     }
 
     public int getRequestCode() {
         return requestCode;
+    }
+
+    public boolean isSslProxyMode() {
+        return sslProxyMode;
     }
 }

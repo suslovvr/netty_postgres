@@ -5,7 +5,6 @@ import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
-import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.handler.ssl.SslContext;
 import joptsimple.OptionParser;
 import joptsimple.OptionSet;
@@ -13,12 +12,10 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.Nullable;
 import ru.sber.df.epmp.netty_postgres.server.postgres.action.sql.DescribeResult;
-import ru.sber.df.epmp.netty_postgres.server.postgres.action.sql.ResultReceiver;
 import ru.sber.df.epmp.netty_postgres.server.postgres.action.sql.Session;
 import ru.sber.df.epmp.netty_postgres.server.postgres.action.sql.Sessions;
 import ru.sber.df.epmp.netty_postgres.server.postgres.auth.*;
 import ru.sber.df.epmp.netty_postgres.server.postgres.common.annotations.VisibleForTesting;
-import ru.sber.df.epmp.netty_postgres.server.postgres.common.collections.Lists2;
 import ru.sber.df.epmp.netty_postgres.server.postgres.expression.symbol.Literal;
 import ru.sber.df.epmp.netty_postgres.server.postgres.expression.symbol.Symbol;
 import ru.sber.df.epmp.netty_postgres.server.postgres.metadata.Schemas;
@@ -30,26 +27,17 @@ import ru.sber.df.epmp.netty_postgres.server.postgres.protocols.postgres.*;
 import ru.sber.df.epmp.netty_postgres.server.postgres.protocols.postgres.types.PGType;
 import ru.sber.df.epmp.netty_postgres.server.postgres.protocols.postgres.types.PGTypes;
 import ru.sber.df.epmp.netty_postgres.server.postgres.sql.tree.Statement;
-import ru.sber.df.epmp.netty_postgres.server.postgres.tcp.codec.PostgresWireMessageBuilder;
-import ru.sber.df.epmp.netty_postgres.server.postgres.tcp.domain.FrontendBootstrapMessage;
-import ru.sber.df.epmp.netty_postgres.server.postgres.tcp.domain.FrontendMessageTypeJ;
 import ru.sber.df.epmp.netty_postgres.server.postgres.tcp.domain.PgCommandMessage;
-import ru.sber.df.epmp.netty_postgres.server.postgres.tcp.utils.ByteBufUtilsJ;
 import ru.sber.df.epmp.netty_postgres.server.postgres.types.DataType;
 import ru.sber.df.epmp.netty_postgres.server.postgres.user.User;
 import ru.sber.df.epmp.netty_postgres.server.postgres.user.UserManagerService;
-import ru.sber.df.epmp.netty_postgres.utils.sql.SemanticConvertor;
-import ru.sber.df.epmp.netty_postgres.utils.sql.SqlCommandUtil;
-import ru.sber.df.epmp.netty_postgres.utils.sql.SqlHints;
 import ru.sber.df.epmp.netty_postgres.utils.sql.semantic.SemanticNamesConversion;
 
 import javax.net.ssl.SSLSession;
 import java.net.InetAddress;
-import java.net.SocketException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
@@ -57,6 +45,7 @@ import java.util.function.Supplier;
 
 import static ru.sber.df.epmp.netty_postgres.server.postgres.protocols.SSL.getSession;
 import static ru.sber.df.epmp.netty_postgres.server.postgres.protocols.postgres.FormatCodes.getFormatCode;
+import static ru.sber.df.epmp.netty_postgres.server.postgres.protocols.postgres.PgDecoder.SSL_REQUEST_CODE;
 //import static ru.sber.df.epmp.netty_postgres.server.postgres.protocols.postgres.Messages.sendReadyForQuery;
 
 public class PostgresProtocolHandler extends ChannelInboundHandlerAdapter {
@@ -115,10 +104,14 @@ public class PostgresProtocolHandler extends ChannelInboundHandlerAdapter {
                 LOGGER.error("Error trying to send error to client: {}", t, ti);
             }
         }
-        LOGGER.info("OutcomeList().size() = "+decoder.getOutcomeList().size());
         LOGGER.info("CurrentBuf().readableBytes() = "+decoder.getCurrentBuf().readableBytes());
-        if(decoder.getCurrentBuf().readableBytes()==0) {
-            ctx.fireChannelRead(msg);
+        if(buffer.writerIndex()==decoder.getCurrentBuf().writerIndex() && buffer.readableBytes() == 0 ){
+//            decoder.getCurrentBuf().resetReaderIndex();
+            ctx.fireChannelRead(buffer);
+        } else {
+            if (decoder.getCurrentBuf().readableBytes() == 0) {
+                ctx.fireChannelRead(msg);
+            }
         }
     }
 
@@ -126,15 +119,16 @@ public class PostgresProtocolHandler extends ChannelInboundHandlerAdapter {
     private void dispatchState(ByteBuf buffer, Channel channel) {
         switch (decoder.state()) {
             case STARTUP:
-                LOGGER.info("SSLRequest");
+                LOGGER.info("decoder.state="+decoder.state()+((decoder.getRequestCode() == SSL_REQUEST_CODE)?" SSLRequest":""));
                 return;
             case STARTUP_PARAMETERS:
-                pushStartUpChunk(  decoder.payloadLength(),decoder.getRequestCode() , buffer);
-                handleStartupBody(buffer, channel);
+                LOGGER.info("decoder.state="+decoder.state());
+                pushStartParamsChunk(  decoder.state(), decoder.payloadLength(), decoder.getRequestCode(), buffer);
+//                handleStartupBody(buffer, channel);
                 decoder.startupDone();
                 return;
-
             case CANCEL:
+                LOGGER.info("decoder.state="+decoder.state());
                 handleCancelRequestBody(buffer, channel);
                 return;
 
@@ -145,7 +139,9 @@ public class PostgresProtocolHandler extends ChannelInboundHandlerAdapter {
                     buffer.skipBytes(decoder.payloadLength());
                     return;
                 }
-                dispatchMessage(buffer, channel);
+                if(!decoder.isSslProxyMode()) {
+                    dispatchMessage(buffer, channel);
+                }
                 return;
             default:
                 throw new IllegalStateException("Illegal state: " + decoder.state());
@@ -886,32 +882,56 @@ public class PostgresProtocolHandler extends ChannelInboundHandlerAdapter {
         PgCommandMessage msgChunk = new PgCommandMessage(  len, requestCode, buffer);
         msgChunks.add(msgChunk);
     }
+    private void pushStartParamsChunk( PgDecoder.State state, int len, int requestCode, ByteBuf buffer){
+        PgCommandMessage msgChunk = new PgCommandMessage(  state, len,  requestCode, buffer);
+        msgChunks.add(msgChunk);
+    }
 
     public int getMessageLen(){
         int retVal=0;
         for(PgCommandMessage chunk: msgChunks){
+            if(chunk.getState() == PgDecoder.State.STARTUP_PARAMETERS){
+                retVal += chunk.getLength();
+            }else{
             if(chunk.getRequestCode()==0) {
-                retVal += chunk.getLength() + 4;
+                if(decoder.isSslProxyMode()){
+                    retVal += chunk.getBytes().length + 5;
+                }else {
+                    retVal += chunk.getLength() + 5;
+                }
             }else{
                 retVal += chunk.getLength() + 8;
             }
-        }
+        }}
         return retVal;
     }
 
     public ByteBuf pullMessage(){
-        ByteBuf buf=Unpooled.buffer(getMessageLen());
-        for(PgCommandMessage chunk: msgChunks){
-            if(chunk.getRequestCode()==0) {
-                buf.writeByte(chunk.getMsgType());
-                buf.writeInt(chunk.getLength() + 4);
-                buf.writeBytes(chunk.getBytes());
-            }else{
-                buf.writeInt(chunk.getLength() + 8);
-                buf.writeInt(chunk.getRequestCode());
-                buf.writeBytes(chunk.getBytes());
+        ByteBuf buf=null;
+        if(msgChunks.size()==1 ){
+            if(msgChunks.get(0).getState() == PgDecoder.State.STARTUP_PARAMETERS){
+                buf = Unpooled.copiedBuffer(msgChunks.get(0).getBytes());
             }
         }
+        if(buf == null){
+        buf=Unpooled.buffer(getMessageLen());
+        for(PgCommandMessage chunk: msgChunks){
+            if(chunk.getState() == PgDecoder.State.STARTUP_PARAMETERS){
+                buf.writeBytes(chunk.getBytes());
+            }else {
+                if (chunk.getRequestCode() == 0) {
+                    buf.writeByte(chunk.getMsgType());
+                    buf.writeInt(chunk.getLength() + 4);
+                    if(chunk.getBytes().length>0) {
+                        buf.writeBytes(chunk.getBytes());
+                    }
+                } else {
+                    buf.writeInt(chunk.getLength() + 8);
+                    buf.writeInt(chunk.getRequestCode());
+                    buf.writeBytes(chunk.getBytes());
+                }
+            }
+        }}
         LOGGER.info("pullMessage from "+msgChunks.size()+" chanks");
         msgChunks.clear();
         return buf;

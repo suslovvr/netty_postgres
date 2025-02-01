@@ -16,7 +16,7 @@ public class PostgresExceptionHandler extends ChannelInboundHandlerAdapter {
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx,Throwable cause) throws Exception{
         try {
-            ChannelHandler forwarder = ctx.pipeline().remove("forwarder");
+//            ChannelHandler forwarder = ctx.pipeline().remove("forwarder");
             ctx.pipeline().addLast(new HttpServerCodec());
             FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.EXPECTATION_FAILED,
                     Unpooled.wrappedBuffer(cause.getMessage().getBytes(StandardCharsets.UTF_8)));
