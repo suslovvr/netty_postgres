@@ -23,10 +23,7 @@ public class PgCommandMessage {
         this.msgType=msgType;
         int arrayLen = buffer.readableBytes();
         bytes= new byte[arrayLen];
-        int index= buffer.readerIndex();
-        buffer.resetReaderIndex();
         buffer.readBytes(bytes);
-        int index2= buffer.readerIndex();
         this.length=len;
         this.requestCode=0;
         LOGGER.info("msg added.. "+arrayLen+" bytes");
@@ -36,30 +33,16 @@ public class PgCommandMessage {
         this.requestCode=requestCode;
         this.msgType=0;
         bytes= new byte[len];
-        int index= buffer.readerIndex();
-        buffer.resetReaderIndex();
         buffer.readBytes(bytes);
-        int index2= buffer.readerIndex();
         LOGGER.info("startup added.. "+len+" bytes");
     }
     public PgCommandMessage( PgDecoder.State state,int len, int requestCode, ByteBuf buffer){
         this.state = state;
         this.length=buffer.readableBytes();
-//        this.length=buffer.readableBytes();
         this.requestCode=0;
         this.msgType=0;
-        buffer.resetReaderIndex();
-//        buffer.readerIndex(0);
         bytes = new byte[length];
-//        ByteBuf buf=directBuffer(buffer.writerIndex());
-//        ByteBuf buf = buffer(buffer.writerIndex());
-//        buf.writerIndex(0);
-//        buf.writeInt(len).writeInt(requestCode).writeBytes(buffer);
-//        buf.writeBytes(buffer);
-//        int index= buffer.readerIndex();
-//        buffer.retain();
         buffer.readBytes(bytes);
-        int index2= buffer.readerIndex();
         LOGGER.info(state.name()+" added.. "+length+" bytes");
     }
     public void cleanUp(){

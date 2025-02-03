@@ -101,7 +101,7 @@ public class PgDecoder extends ByteToMessageDecoder {
     protected void decode(ChannelHandlerContext ctx, ByteBuf in, List<Object> out) throws Exception {
         currentBuf=in;
         LOGGER.info("received for decode "+ getCurrentBuf().readableBytes());
-        if(getCurrentBuf().readableBytes()==496){
+        if(getCurrentBuf().readableBytes()==512){
             LOGGER.info(" decode ");
         }
         ByteBuf decodeBuf = decode(ctx, in);
@@ -122,7 +122,7 @@ public class PgDecoder extends ByteToMessageDecoder {
                 requestCode = in.readInt();
 
                 if (requestCode == SSL_REQUEST_CODE) {
-//                    sslProxyMode = true;
+                    sslProxyMode = true;
                     SslContext sslContext = getSslContext.get();
 //                    requestCode=196608;
 
