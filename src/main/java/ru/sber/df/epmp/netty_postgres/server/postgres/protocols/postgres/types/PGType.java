@@ -21,11 +21,11 @@
 
 package ru.sber.df.epmp.netty_postgres.server.postgres.protocols.postgres.types;
 
-import ru.sber.df.epmp.netty_postgres.server.postgres.types.Regproc;
 import io.netty.buffer.ByteBuf;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.NotNull;
+import ru.sber.df.epmp.netty_postgres.server.postgres.types.Regproc;
 
 import java.nio.charset.StandardCharsets;
 

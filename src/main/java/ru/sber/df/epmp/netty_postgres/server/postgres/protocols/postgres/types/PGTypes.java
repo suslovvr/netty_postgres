@@ -24,7 +24,6 @@ package ru.sber.df.epmp.netty_postgres.server.postgres.protocols.postgres.types;
 import com.carrotsearch.hppc.IntObjectHashMap;
 import com.carrotsearch.hppc.IntObjectMap;
 import ru.sber.df.epmp.netty_postgres.server.postgres.common.collections.MapBuilder;
-import ru.sber.df.epmp.netty_postgres.server.postgres.types.*;
 import org.jetbrains.annotations.Nullable;
 import ru.sber.df.epmp.netty_postgres.server.postgres.types.ArrayType;
 import ru.sber.df.epmp.netty_postgres.server.postgres.types.DataType;
@@ -40,6 +39,12 @@ public class PGTypes {
     private static final Map<DataType<?>, PGType<?>> CRATE_TO_PG_TYPES = MapBuilder.<DataType<?>, PGType<?>>newLinkedHashMapBuilder()
         .put(DataTypes.BYTE, CharType.INSTANCE)
         .put(DataTypes.STRING, VarCharType.INSTANCE)
+            .put(DataTypes.BOOLEAN, BooleanType.INSTANCE)
+            .put(DataTypes.SHORT, SmallIntType.INSTANCE)
+            .put(DataTypes.INTEGER, IntegerType.INSTANCE)
+            .put(DataTypes.LONG, BigIntType.INSTANCE)
+            .put(DataTypes.TIMESTAMP, TimestampType.INSTANCE)
+            .put(DataTypes.IP, VarCharType.INSTANCE) // postgres has no IP type, so map it to varchar - it matches the client representation
 /*
         .put(DataTypes.CHARACTER, CharacterType.INSTANCE)
         .put(DataTypes.BOOLEAN, BooleanType.INSTANCE)
